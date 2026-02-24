@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>MineSearch</title>
+
+<style>
+:root{
+  --bg:#0b0f14;
+  --bg-soft:#111827;
+  --panel:rgba(17,24,39,.92);
+  --text:#e5e7eb;
+  --muted:#9ca3af;
+  --line:rgba(255,255,255,.12);
+  --accent:#22c55e;
+  --radius:20px;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:"Space Grotesk",system-ui,sans-serif;
+  background:linear-gradient(160deg,var(--bg),var(--bg-soft));
+  color:var(--text);
+}
+.wrap{max-width:1100px;margin:auto;padding:28px}
+.topbar{display:flex;justify-content:space-between;align-items:center}
+.brand{display:flex;gap:14px;align-items:center}
+.logo{
+  width:48px;height:48px;border-radius:14px;
+  display:grid;place-items:center;
+  background:linear-gradient(135deg,var(--accent),#16a34a);
+  font-weight:900;color:#052e16;
+}
+.panel{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:22px;
+}
+h1{margin:0;font-size:2.2rem}
+.muted{color:var(--muted)}
+#chat{
+  margin-top:20px;
+  height:520px;
+  overflow:auto;
+}
+.msg{margin-bottom:22px}
+.user{color:var(--accent);font-weight:800}
+.ai{color:var(--text)}
+.ai img{max-width:100%;border-radius:14px;margin-top:12px}
+.source{margin-top:14px;font-size:.9rem;color:var(--muted)}
+.source a{color:var(--accent)}
+.inputbar{margin-top:18px;display:flex;gap:10px}
+input{
+  flex:1;padding:14px 18px;border-radius:999px;
+  border:1px solid var(--line);
+  background:rgba(255,255,255,.04);
+  color:var(--text)
+}
+button{
+  padding:12px 18px;border-radius:999px;
+  border:1px solid var(--line);
+  background:var(--panel);color:var(--text);
+  cursor:pointer
+}
+
+/* Side Button */
+.sidebtn{
+  position:fixed;right:22px;top:50%;
+  transform:translateY(-50%);
+  background:linear-gradient(135deg,var(--accent),#16a34a);
+  color:#052e16;
+  padding:14px 16px;
+  border-radius:999px;
+  font-weight:900;
+  text-decoration:none;
+  animation:pulse 2.2s infinite;
+}
+@keyframes pulse{
+  0%{box-shadow:0 0 0 0 rgba(34,197,94,.6)}
+  70%{box-shadow:0 0 0 18px rgba(34,197,94,0)}
+  100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}
+}
+</style>
+</head>
+
+<body>
+<a class="sidebtn" href="/webfetcher/index.html">WebFetcher</a>
+
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">
+      <div class="logo">⛏</div>
+      <div>
+        <h1>MineSearch</h1>
+        <div class="muted">Minecraft-Suche · Wiki · Bilder · Quellen</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div id="chat"></div>
+
+    <div class="inputbar">
+      <input id="q" placeholder="Suche etwas über Minecraft …">
+      <button onclick="search()">Suchen</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const chat = document.getElementById("chat");
+const input = document.getElementById("q");
+
+async function search(){
+  const query = input.value.trim();
+  if(!query) return;
+
+  chat.innerHTML += `<div class="msg user">${query}</div>`;
+  input.value = "";
+
+  // 1) Minecraft Wiki Suche
+  let title=null, source=null, pageUrl=null, extract=null, img=null;
+
+  try{
+    const mw = await fetch(
+      "https://minecraft.wiki/api.php?action=query&list=search&srsearch="
+      + encodeURIComponent(query)
+      + "&format=json&origin=*"
+    );
+    const mwData = await mw.json();
+
+    if(mwData.query.search.length){
+      title = mwData.query.search[0].title;
+      pageUrl = "https://minecraft.wiki/w/" + encodeURIComponent(title.replace(/ /g,"_"));
+      source = "Minecraft Wiki";
+    }
+  }catch(e){}
+
+  // 2) Fallback Wikipedia (Minecraft-bezogen)
+  if(!title){
+    const wp = await fetch(
+      "https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch="
+      + encodeURIComponent(query + " minecraft")
+      + "&format=json&origin=*"
+    );
+    const wpData = await wp.json();
+    if(!wpData.query.search.length){
+      chat.innerHTML += `<div class="msg ai">Keine Infos gefunden.</div>`;
+      return;
+    }
+    title = wpData.query.search[0].title;
+    pageUrl = "https://en.wikipedia.org/wiki/" + encodeURIComponent(title);
+    source = "Wikipedia";
+  }
+
+  // 3) Inhalt + Bild
+  const page = await fetch(
+    "https://en.wikipedia.org/w/api.php?action=query&prop=extracts|pageimages&explaintext&pithumbsize=700&titles="
+    + encodeURIComponent(title)
+    + "&format=json&origin=*"
+  );
+  const pageData = await page.json();
+  const obj = Object.values(pageData.query.pages)[0];
+  extract = obj.extract ? obj.extract.slice(0,1600) + "…" : "Kein Text verfügbar.";
+  if(obj.thumbnail) img = obj.thumbnail.source;
+
+  let html = extract;
+  if(img) html += `<img src="${img}">`;
+  html += `<div class="source">Quelle: <a target="_blank" href="${pageUrl}">${source}</a></div>`;
+
+  chat.innerHTML += `<div class="msg ai">${html}</div>`;
+  chat.scrollTop = chat.scrollHeight;
+}
+
+input.addEventListener("keydown",e=>{
+  if(e.key==="Enter") search();
+});
+</script>
+</body>
+</html>
